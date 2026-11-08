@@ -1,13 +1,165 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-paper font-sans text-base text-ink antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-serif font-semibold;
+  }
+
+  ::selection {
+    background: #ffe94d;
+    color: #1b2a4a;
+  }
+
+  :focus-visible {
+    outline: 2px solid #1b2a4a;
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+@layer components {
+  /* The highlighter swipe. Angled ends, and it wraps line by line like a real marker. */
+  .hl {
+    /* Yellow unless a parent sets --hl-color (the navigation uses each page's own colour). */
+    background-image: linear-gradient(
+      100deg,
+      transparent 0.15em,
+      var(--hl-color, #ffe94d) 0.4em,
+      var(--hl-color, #ffe94d) calc(100% - 0.45em),
+      transparent calc(100% - 0.15em)
+    );
+    background-repeat: no-repeat;
+    background-size: 100% 80%;
+    background-position: 0 75%;
+    padding: 0 0.35em;
+    margin: 0 -0.35em;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  /* Played once, on the "Up next" task when the dashboard loads. */
+  .hl-draw {
+    animation: hl-draw 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s both;
+  }
+
+  @keyframes hl-draw {
+    from {
+      background-size: 0% 80%;
+    }
+  }
+
+  /* A pen line drawn through finished tasks. */
+  .strike {
+    background-image: linear-gradient(currentColor, currentColor);
+    background-repeat: no-repeat;
+    background-position: 0 58%;
+    background-size: 0% 2px;
+    transition: background-size 0.35s ease, color 0.2s ease;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  .strike-on {
+    background-size: 100% 2px;
+  }
+
+  /* Focus Studio: the session fills across the page like one long marker stroke. */
+  .swipe-fill {
+    clip-path: polygon(0 0, 100% 0, calc(100% - 0.8rem) 100%, 0 100%);
+    transition: width 0.3s linear;
+  }
+
+  .swipe-focus {
+    background: #ffe94d;
+  }
+
+  .swipe-break {
+    background: #c9d6e8;
+  }
+
+  /* Dashboard: today's tasks as a ruled index card, with another card peeking out behind it. */
+  .index-card {
+    @apply rounded-sm border border-rule bg-white;
+    box-shadow: 5px 5px 0 0 #e4eaf3, 5px 5px 0 1px #c9d6e8;
+  }
+
+  /* Deadline timeline: the dot is a round checkbox. Homework is hollow, exams filled; done shows a tick. */
+  .timeline-check {
+    @apply grid h-4 w-4 cursor-pointer appearance-none place-content-center rounded-full border-2 border-ink bg-paper hover:ring-2 hover:ring-ink/20;
+  }
+
+  .timeline-check-exam {
+    @apply bg-ink;
+  }
+
+  .timeline-check::before {
+    content: '';
+    width: 0.55rem;
+    height: 0.55rem;
+    background: #fafbf8;
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+    transform: scale(0);
+    transition: transform 0.15s ease;
+  }
+
+  .timeline-check:checked {
+    @apply bg-ink;
+  }
+
+  .timeline-check:checked::before {
+    transform: scale(1);
+  }
+
+  .task-check {
+    @apply grid h-5 w-5 shrink-0 cursor-pointer appearance-none place-content-center rounded border-2 border-ink bg-white;
+  }
+
+  .task-check::before {
+    content: '';
+    width: 0.7rem;
+    height: 0.7rem;
+    background: #fafbf8;
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+    transform: scale(0);
+    transition: transform 0.15s ease;
+  }
+
+  .task-check:checked {
+    @apply bg-ink;
+  }
+
+  .task-check:checked::before {
+    transform: scale(1);
+  }
+
+  .field {
+    @apply rounded-md border border-rule bg-white px-3 py-2 text-base text-ink placeholder:text-pencil hover:border-pencil focus:border-ink;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hl-draw {
+    animation: none;
+  }
+
+  .strike,
+  .swipe-fill,
+  .timeline-check::before,
+  .task-check::before {
+    transition: none;
+  }
 }
