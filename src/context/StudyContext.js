@@ -220,6 +220,7 @@ export function StudyProvider({ account, children }) {
       deleteRoomNote: (roomId, noteId) => dispatch({ type: 'room/note/delete', id: roomId, noteId }),
 
       resetData: () => dispatch({ type: 'data/reset' }),
+      loadSampleData: () => dispatch({ type: 'data/sample' }),
     };
   }, [dispatch]);
 

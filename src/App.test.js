@@ -183,7 +183,7 @@ describe('with existing data', () => {
 
   test.each([
     ['/courses', 'Courses'],
-    ['/courses/c-linalg', 'Linear Algebra'],
+    ['/courses/c-linalg', 'Courses'],
     ['/focus', 'Focus Studio'],
     ['/together', 'Study Together'],
     ['/together/rooms/r-library', 'Quiet library'],
@@ -214,6 +214,50 @@ describe('with existing data', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add task' }));
     expect(screen.getByText('Revise for the chemistry midterm')).toBeInTheDocument();
     expect(screen.getByText('4 of 8')).toBeInTheDocument();
+  });
+
+  test('a course opens beside the list of courses', () => {
+    renderAt('/courses/c-orgchem');
+    expect(screen.getByRole('heading', { level: 2, name: 'Organic Chemistry' })).toBeInTheDocument();
+    const list = within(screen.getByRole('navigation', { name: 'Your courses' }));
+    expect(list.getAllByRole('link').length).toBe(4);
+    expect(list.getByRole('link', { current: 'page' })).toHaveTextContent('Organic Chemistry');
+  });
+
+  test('"/courses" opens the first course', () => {
+    renderAt('/courses');
+    expect(screen.getByRole('heading', { level: 2, name: 'Linear Algebra' })).toBeInTheDocument();
+  });
+
+  test('ticking a topic on a course page moves its completion', () => {
+    renderAt('/courses/c-linalg');
+    expect(screen.getByText('6 of 10')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Properties of determinants' }));
+    expect(screen.getByText('7 of 10')).toBeInTheDocument();
+  });
+});
+
+describe('sample data', () => {
+  test('can be loaded from the empty dashboard', () => {
+    renderAt('/');
+    fireEvent.click(screen.getByRole('button', { name: 'Load sample data' }));
+    expect(screen.getAllByText('Finish the diagonalization problem set').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Start by adding your courses.')).not.toBeInTheDocument();
+  });
+
+  test('can be loaded from the empty courses page', () => {
+    renderAt('/courses');
+    fireEvent.click(screen.getByRole('button', { name: 'Load sample data' }));
+    expect(screen.getByRole('heading', { level: 2, name: 'Linear Algebra' })).toBeInTheDocument();
+  });
+
+  test('asks twice on the progress page before replacing existing work', () => {
+    withSampleData();
+    renderAt('/progress');
+    fireEvent.click(screen.getByRole('button', { name: 'Erase everything' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Click again to erase all your data' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load sample data' }));
+    expect(screen.getAllByText('Linear Algebra').length).toBeGreaterThan(0);
   });
 });
 

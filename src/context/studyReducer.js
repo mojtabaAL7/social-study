@@ -1,4 +1,4 @@
-import { createInitialData, IDLE_FOCUS, USER_ID } from '../data';
+import { createInitialData, createSampleData, IDLE_FOCUS, USER_ID } from '../data';
 import { advanceRoom, isChapterDone, toKey } from '../utils';
 
 export function makeId(prefix) {
@@ -310,6 +310,18 @@ export function studyReducer(state, action) {
       return { ...state, settings: { ...state.settings, ...action.changes } };
     case 'data/reset':
       return createInitialData();
+    case 'data/sample': {
+      // Example courses, tasks, deadlines and history replace your own. Friends, groups and rooms stay.
+      const sample = createSampleData();
+      return {
+        ...state,
+        courses: sample.courses,
+        tasks: sample.tasks,
+        assignments: sample.assignments,
+        sessions: sample.sessions,
+        focus: { ...state.focus, courseId: null, taskId: null, lastFinished: null },
+      };
+    }
     default:
       return focusReducer(state, action) || courseReducer(state, action) || socialReducer(state, action) || state;
   }
