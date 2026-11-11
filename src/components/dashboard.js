@@ -346,7 +346,7 @@ export function UpcomingDeadlines() {
 
 // Greeting plus the one thing to do next: the first unfinished task of the day.
 export function WelcomeBanner() {
-  const { user, tasks, courses } = useStudy();
+  const { user, tasks, courses, loadSampleData } = useStudy();
   const today = todayKey();
   const todays = tasksForDay(tasks, today);
   const next = todays.find((t) => !t.done);
@@ -366,9 +366,12 @@ export function WelcomeBanner() {
   if (!next && !courses.length && !todays.length) {
     headline = 'Start by adding your courses.';
     action = (
-      <Button to="/courses" className="shrink-0">
-        Add your courses
-      </Button>
+      <div className="flex shrink-0 flex-wrap gap-3">
+        <Button to="/courses">Add your courses</Button>
+        <Button variant="quiet" onClick={loadSampleData}>
+          Load sample data
+        </Button>
+      </div>
     );
   } else if (!next && !todays.length) {
     headline = 'Nothing planned for today yet.';

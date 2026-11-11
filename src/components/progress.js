@@ -1,67 +1,52 @@
 import { useState } from 'react';
 import { useStudy } from '../context/StudyContext';
-import { byDue, dailySeries, formatLongDate, formatMinutes, fromKey, minutesByDate, monthGrid, monthlySeries, startOfWeek, todayKey, toKey, typeLabel, weeklySeries } from '../utils';
+import { addDays, byDue, formatLongDate, formatMinutes, fromKey, minutesByDate, monthGrid, startOfWeek, todayKey, toKey, typeLabel } from '../utils';
 import { DeadlineForm, DeadlineRow } from './deadlines';
-import { COURSE_BG, COURSE_PEN, CourseMark, Modal, Section, Segmented } from './ui';
+import { Badge, Button, ConfirmButton, COURSE_BG, COURSE_PEN, CourseMark, Modal, Section, Segmented } from './ui';
+
+/** "1h 15" or "40m": short enough for a calendar cell or the top of a bar. */
+function shortMinutes(total) {
+  const minutes = Math.round(total);
+  if (minutes < 60) return `${minutes}m`;
+  const rest = minutes % 60;
+  return rest ? `${Math.floor(minutes / 60)}h ${String(rest).padStart(2, '0')}` : `${Math.floor(minutes / 60)}h`;
+}
+
+const sumMinutes = (sessions) => sessions.reduce((n, s) => n + s.minutes, 0);
 
 // ---------- Achievements ----------
 
-function Seal({ earned }) {
-  return (
-    <span
-      aria-hidden={true}
-      className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ${earned ? 'bg-ink text-paper' : 'border-2 border-rule'}`}
-    >
-      {earned ? (
-        <svg
-          viewBox="0 0 16 16"
-          className="h-3.5 w-3.5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2.5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M3.5 8.5l3 3 6-7" />
-        </svg>
-      ) : null}
-    </span>
-  );
-}
-
-/** Milestones: earned ones first, the rest with how far along you are. */
+/**
+ * Milestones as small cards. Earned ones are inked in and highlighted;
+ * the rest are pencilled outlines that show how far along you are.
+ */
 export function Achievements({ items }) {
   const sorted = items.slice().sort((a, b) => Number(b.earned) - Number(a.earned) || b.value / b.target - a.value / a.target);
   const earned = items.filter((i) => i.earned).length;
 
   return (
-    <Section
-      title="Achievements"
-      icon="trophy"
-      action={<span className="text-sm text-pencil">{`${earned} of ${items.length} earned`}</span>}
-    >
-      <ul className="grid gap-x-8 sm:grid-cols-2">
+    <Section title="Achievements" icon="trophy" action={<span className="text-sm text-pencil">{`${earned} of ${items.length} earned`}</span>}>
+      <ul className="grid grid-cols-2 gap-2 pt-1 xl:grid-cols-3">
         {sorted.map((item) => (
-          <li key={item.id} className="flex gap-3 border-b border-rule/60 py-3">
-            <Seal earned={item.earned} />
-            <div className="min-w-0 flex-1">
-              <p className={item.earned ? 'font-bold' : ''}>
-                {item.title}
-                <span className="sr-only">{item.earned ? ' (earned)' : ' (not yet earned)'}</span>
-              </p>
-              <p className="text-sm text-pencil">{item.description}</p>
-              {item.earned ? null : (
-                <div className="mt-1.5">
+          <li
+            key={item.id}
+            className={`flex min-h-[6.5rem] flex-col rounded-sm p-3 ${item.earned ? 'border border-ink bg-white' : 'border border-dashed border-pencil/50 text-pencil'}`}
+          >
+            <p className="font-serif text-md font-semibold leading-snug">
+              {item.earned ? <span className="hl">{item.title}</span> : item.title}
+              <span className="sr-only">{item.earned ? ' (earned)' : ' (not yet earned)'}</span>
+            </p>
+            <p className="mt-1 text-sm">{item.description}</p>
+            <div className="mt-auto pt-2">
+              {item.earned ? (
+                <Badge variant="solid">Earned</Badge>
+              ) : (
+                <>
                   <div aria-hidden={true} className="h-1 rounded-full bg-rule/50">
-                    <div
-                      className="h-full rounded-full bg-pencil"
-                      style={{
-                        width: `${(item.value / item.target) * 100}%`,
-                      }}
-                    />
+                    <div className="h-full rounded-full bg-pencil" style={{ width: `${(item.value / item.target) * 100}%` }} />
                   </div>
-                  <p className="mt-1 text-xs text-pencil tabular">{item.progressText}</p>
-                </div>
+                  <p className="mt-1 text-xs tabular">{item.progressText}</p>
+                </>
               )}
             </div>
           </li>
@@ -71,7 +56,7 @@ export function Achievements({ items }) {
   );
 }
 
-// ---------- CourseDistribution ----------
+// ---------- HoursByCourse ----------
 
 const RANGES = [
   { value: 'week', label: 'This week' },
@@ -85,251 +70,119 @@ function since(range) {
   return '';
 }
 
-/** How study time splits across courses: one bar per course in its own colour, labelled. */
-export function CourseDistribution({ sessions, courses }) {
-  const [range, setRange] = useState('month');
+/** How study time splits across courses: one bar cut into the courses' colours, then the figures. */
+export function HoursByCourse({ sessions, courses }) {
+  const [range, setRange] = useState('all');
   const from = since(range);
   const inRange = sessions.filter((s) => s.date >= from);
-  const total = inRange.reduce((n, s) => n + s.minutes, 0);
+  const total = sumMinutes(inRange);
 
-  const rows = courses.map((c) => ({
-    id: c.id,
-    name: c.name,
-    color: c.color,
-    minutes: inRange.filter((s) => s.courseId === c.id).reduce((n, s) => n + s.minutes, 0),
-  }));
-  const other = inRange.filter((s) => !courses.some((c) => c.id === s.courseId)).reduce((n, s) => n + s.minutes, 0);
+  const rows = courses.map((c) => ({ id: c.id, name: c.name, color: c.color, minutes: sumMinutes(inRange.filter((s) => s.courseId === c.id)) }));
+  const other = sumMinutes(inRange.filter((s) => !courses.some((c) => c.id === s.courseId)));
   if (other) rows.push({ id: 'other', name: 'No course or deleted', color: null, minutes: other });
   rows.sort((a, b) => b.minutes - a.minutes);
-  const max = Math.max(1, ...rows.map((r) => r.minutes));
+
+  return (
+    <Section title="Where the hours went" icon="pie" action={<Segmented label="Time range" value={range} onChange={setRange} options={RANGES} />}>
+      {total ? (
+        <>
+          <div aria-hidden={true} className="mt-1 flex h-3.5 gap-0.5 overflow-hidden rounded-sm">
+            {rows.map((row) =>
+              row.minutes ? <span key={row.id} className={row.color ? COURSE_PEN[row.color] : 'bg-pencil'} style={{ flexGrow: row.minutes, minWidth: 3 }} /> : null
+            )}
+          </div>
+          <ul className="mt-2 divide-y divide-rule/60">
+            {rows.map((row) => (
+              <li key={row.id} className="flex items-baseline justify-between gap-4 py-2.5">
+                <span className="flex min-w-0 items-center gap-2">
+                  {row.color ? <CourseMark color={row.color} /> : <span className="inline-block h-3 w-4 shrink-0" />}
+                  <span className="truncate">{row.name}</span>
+                </span>
+                <span className="whitespace-nowrap text-sm tabular">
+                  <span className="font-bold">{formatMinutes(row.minutes)}</span>
+                  <span className="ml-3 inline-block w-9 text-right text-pencil">{`${Math.round((row.minutes / total) * 100)}%`}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="py-3 text-pencil">No study time in this range yet. Finished focus sessions show up here, split by course.</p>
+      )}
+    </Section>
+  );
+}
+
+// ---------- LastTwoWeeks ----------
+
+const DAYS = 14;
+const BAR_AREA_PX = 150;
+
+/** Study time for each of the last 14 days, every bar stacked by course. */
+export function LastTwoWeeks({ sessions, courses }) {
+  const today = new Date();
+  const days = Array.from({ length: DAYS }, (_, i) => {
+    const date = addDays(today, i - (DAYS - 1));
+    const key = toKey(date);
+    const list = sessions.filter((s) => s.date === key);
+    const parts = courses.map((c) => ({ id: c.id, color: c.color, minutes: sumMinutes(list.filter((s) => s.courseId === c.id)) }));
+    const other = sumMinutes(list.filter((s) => !courses.some((c) => c.id === s.courseId)));
+    if (other) parts.push({ id: 'other', color: null, minutes: other });
+    return { key, date, total: sumMinutes(list), parts: parts.filter((p) => p.minutes), isToday: i === DAYS - 1 };
+  });
+  const max = Math.max(60, ...days.map((d) => d.total));
+  const total = days.reduce((n, d) => n + d.total, 0);
+  const used = courses.filter((c) => days.some((d) => d.parts.some((p) => p.id === c.id)));
 
   return (
     <Section
-      title="Time per course"
-      icon="pie"
-      action={<Segmented label="Time range" value={range} onChange={setRange} options={RANGES} />}
+      title="Last 14 days"
+      icon="trend"
+      action={<span className="text-sm text-pencil">{`${formatMinutes(total)} in total, ${formatMinutes(total / DAYS)} a day`}</span>}
     >
-      {total ? (
-        <ul className="space-y-4 pt-1">
-          {rows.map((row) => (
-            <li key={row.id}>
-              <div className="mb-1.5 flex items-baseline justify-between gap-4 text-sm">
-                <span className="flex min-w-0 items-center gap-2">
-                  {row.color ? <CourseMark color={row.color} /> : <span className="inline-block h-3 w-4" />}
-                  <span className="truncate">{row.name}</span>
-                </span>
-                <span className="whitespace-nowrap tabular">{`${formatMinutes(row.minutes)}, ${Math.round((row.minutes / total) * 100)}%`}</span>
-              </div>
-              <div aria-hidden={true} className="h-3">
-                <div
-                  className={`h-full rounded-r ${row.color ? COURSE_PEN[row.color] : 'bg-pencil'}`}
-                  style={{
-                    width: `${(row.minutes / max) * 100}%`,
-                    minWidth: row.minutes ? 2 : 0,
-                  }}
-                />
-              </div>
+      <ul className="flex items-end gap-1 pt-2 sm:gap-1.5" aria-label="Study time per day for the last 14 days">
+        {days.map((d) => (
+          <li key={d.key} aria-label={`${formatLongDate(d.key)}: ${formatMinutes(d.total)}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+            <span aria-hidden={true} className="h-4 whitespace-nowrap text-[0.625rem] leading-4 tabular text-pencil">
+              {d.total ? shortMinutes(d.total) : ''}
+            </span>
+            <span aria-hidden={true} className="flex w-full items-end" style={{ height: BAR_AREA_PX }}>
+              <span
+                className="flex w-full flex-col-reverse gap-px overflow-hidden rounded-t-sm bg-rule/60"
+                style={{ height: d.total ? Math.max(3, Math.round((d.total / max) * BAR_AREA_PX)) : 2 }}
+              >
+                {d.parts.map((p) => (
+                  <span key={p.id} className={p.color ? COURSE_PEN[p.color] : 'bg-pencil'} style={{ flexGrow: p.minutes }} />
+                ))}
+              </span>
+            </span>
+            <span
+              aria-hidden={true}
+              className={`flex w-full flex-col items-center border-t-2 border-ink pt-1 text-xs leading-tight tabular ${d.isToday ? 'font-bold text-ink' : 'text-pencil'}`}
+            >
+              <span>{d.date.toLocaleDateString('en-GB', { weekday: 'narrow' })}</span>
+              {d.isToday ? <span className="hl">{d.date.getDate()}</span> : <span>{d.date.getDate()}</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {used.length ? (
+        <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-pencil">
+          {used.map((c) => (
+            <li key={c.id} className="flex items-center gap-1.5">
+              <span aria-hidden={true} className={`inline-block h-2.5 w-2.5 rounded-sm ${COURSE_PEN[c.color] || 'bg-pencil'}`} />
+              {c.name}
             </li>
           ))}
         </ul>
       ) : (
-        <p className="py-3 text-pencil">
-          No study time in this range yet. Finished focus sessions show up here, split by course.
-        </p>
+        <p className="mt-3 text-pencil">Finished focus sessions show up here, a bar for each day.</p>
       )}
     </Section>
   );
 }
 
-// ---------- StudyChart ----------
-
-const PERIODS = {
-  daily: { label: 'Daily', unit: 'day', build: (s) => dailySeries(s, 14), current: 'Today', span: 'the last 14 days' },
-  weekly: { label: 'Weekly', unit: 'week', build: (s) => weeklySeries(s, 12), current: 'This week', span: 'the last 12 weeks' },
-  monthly: {
-    label: 'Monthly',
-    unit: 'month',
-    build: (s) => monthlySeries(s, 6),
-    current: 'This month',
-    span: 'the last 6 months',
-  },
-};
-
-/** Round the axis up to a clean number of hours. */
-function niceAxis(maxMinutes) {
-  const hours = Math.max(1, maxMinutes / 60);
-  const steps = [0.5, 1, 2, 5, 10, 20, 50, 100];
-  const step = steps.find((s) => hours / s <= 4) || 100;
-  const top = Math.ceil(hours / step) * step;
-  const ticks = [];
-  for (let v = 0; v <= top + 1e-9; v += step) ticks.push(v);
-  return { topMinutes: top * 60, ticks };
-}
-
-const hoursLabel = (v) => (v === 0 ? '0' : `${Number.isInteger(v) ? v : v.toFixed(1)} h`);
-
-/** Study time per day, week or month: a single-series column chart with a table view. */
-export function StudyChart({ sessions }) {
-  const [period, setPeriod] = useState('weekly');
-  const [showTable, setShowTable] = useState(false);
-  const config = PERIODS[period];
-  const points = config.build(sessions);
-
-  const max = Math.max(0, ...points.map((p) => p.minutes));
-  const best = points.reduce((b, p) => (p.minutes > b.minutes ? p : b), points[0]);
-  const current = points[points.length - 1];
-  const finished = points.slice(0, -1);
-  const average = finished.length ? finished.reduce((n, p) => n + p.minutes, 0) / finished.length : 0;
-  const { topMinutes, ticks } = niceAxis(max);
-  const dense = points.length > 8;
-
-  return (
-    <Section
-      title="Study time"
-      icon="trend"
-      action={
-        <Segmented
-          label="Group study time by"
-          value={period}
-          onChange={setPeriod}
-          options={Object.keys(PERIODS).map((k) => ({
-            value: k,
-            label: PERIODS[k].label,
-          }))}
-        />
-      }
-    >
-      <p className="max-w-prose text-pencil">
-        {`${config.current}: `}
-        <span className="font-bold text-ink">{formatMinutes(current.minutes)}</span>
-        {`. Over ${config.span} you averaged ${formatMinutes(average)} per ${config.unit}`}
-        {best && best.minutes
-          ? `, and your best ${config.unit} was ${best.longLabel.replace(/^Week of /, 'the week of ')} with ${formatMinutes(best.minutes)}.`
-          : '.'}
-      </p>
-      {showTable ? (
-        <div className="mt-5 overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <caption className="sr-only">{`Study time per ${config.unit}`}</caption>
-            <thead>
-              <tr className="border-b border-rule">
-                <th className="py-2 font-bold">{config.unit.charAt(0).toUpperCase() + config.unit.slice(1)}</th>
-                <th className="py-2 text-right font-bold">Study time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {points
-                .slice()
-                .reverse()
-                .map((p) => (
-                  <tr key={p.key} className="border-b border-rule/50">
-                    <td className="py-1.5">{p.longLabel}</td>
-                    <td className="py-1.5 text-right tabular">{formatMinutes(p.minutes)}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="mt-6 grid grid-cols-[2.75rem_minmax(0,1fr)]">
-          {/* Y axis labels */}
-          <div aria-hidden={true} className="relative h-48">
-            {ticks.map((t) => (
-              <span
-                key={t}
-                className="absolute right-2 text-xs text-pencil tabular"
-                style={{
-                  bottom: `${((t * 60) / topMinutes) * 100}%`,
-                  transform: 'translateY(50%)',
-                }}
-              >
-                {hoursLabel(t)}
-              </span>
-            ))}
-          </div>
-          <div>
-            <div className="relative h-48">
-              {/* Gridlines */}
-              {ticks.map((t) => (
-                <div
-                  key={t}
-                  aria-hidden={true}
-                  className={`absolute inset-x-0 h-px ${t === 0 ? 'bg-pencil/60' : 'bg-rule/60'}`}
-                  style={{
-                    bottom: `${((t * 60) / topMinutes) * 100}%`,
-                  }}
-                />
-              ))}
-              <ul className="absolute inset-0 flex" aria-label={`Study time per ${config.unit}`}>
-                {points.map((p, i) => {
-                  const height = topMinutes ? (p.minutes / topMinutes) * 100 : 0;
-                  const labelled = p.isCurrent || (p === best && p.minutes > 0);
-                  // Tooltips near the ends line up with the bar's edge so they never stick out of the page.
-                  const tooltipPosition =
-                    i < 2 ? 'left-0' : i >= points.length - 2 ? 'right-0' : 'left-1/2 -translate-x-1/2';
-                  return (
-                    <li
-                      key={p.key}
-                      tabIndex={0}
-                      aria-label={`${p.longLabel}: ${formatMinutes(p.minutes)}`}
-                      className="group relative flex flex-1 items-end justify-center outline-none focus-visible:bg-rule/30"
-                    >
-                      <span
-                        className="relative block w-full max-w-[24px] rounded-t bg-ink transition-colors group-hover:bg-ink-soft"
-                        style={{
-                          height: `${height}%`,
-                          minHeight: p.minutes ? 2 : 0,
-                          margin: '0 1px',
-                        }}
-                      >
-                        {labelled && p.minutes ? (
-                          <span
-                            aria-hidden={true}
-                            className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap text-xs font-bold tabular group-hover:invisible"
-                          >
-                            {formatMinutes(p.minutes).replace(' min', 'm')}
-                          </span>
-                        ) : null}
-                      </span>
-                      {/* Tooltip on hover or keyboard focus */}
-                      <span
-                        role="presentation"
-                        className={`pointer-events-none invisible absolute bottom-full z-10 mb-1 whitespace-nowrap rounded-md bg-ink px-2.5 py-1.5 text-xs text-paper group-hover:visible group-focus-visible:visible ${tooltipPosition}`}
-                      >
-                        <span className="block font-bold">{formatMinutes(p.minutes)}</span>
-                        {p.longLabel}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-            {/* X axis labels */}
-            <div aria-hidden={true} className="mt-2 flex">
-              {points.map((p, i) => (
-                <span
-                  key={p.key}
-                  /* On narrow screens every other label hides (counted from the current period), so the visible ones have room. */ className={`flex min-w-0 flex-1 justify-center whitespace-nowrap text-xs ${p.isCurrent ? 'font-bold text-ink' : 'text-pencil'} ${dense && (points.length - 1 - i) % 2 === 1 ? 'invisible sm:visible' : ''}`}
-                >
-                  {p.isCurrent ? <span className="hl">{p.label}</span> : p.label}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-      <button
-        type="button"
-        onClick={() => setShowTable(!showTable)}
-        className="mt-4 text-sm underline decoration-rule underline-offset-4 hover:decoration-ink"
-      >
-        {showTable ? 'Show as chart' : 'Show as table'}
-      </button>
-    </Section>
-  );
-}
-
-// ---------- StudyHeatmap ----------
+// ---------- StudyCalendar ----------
 
 const LEVELS = [
   { min: 0, className: 'bg-white text-ink', label: 'None' },
@@ -348,27 +201,13 @@ function levelFor(minutes) {
 }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const MAX_CHIPS = 2;
+const MAX_MARKS = 4;
 
-/** A deadline on the calendar, in its course's highlighter colour. Exams are bold with a dark edge. */
-function Chip({ deadline, course }) {
-  const exam = deadline.type === 'exam';
-  return (
-    <span
-      className={`block truncate rounded-sm px-1 text-[0.6875rem] leading-4 text-ink ${course ? COURSE_BG[course.color] : 'bg-white ring-1 ring-inset ring-rule'} ${exam ? 'border-l-[3px] border-ink font-bold' : ''} ${deadline.done ? 'line-through opacity-60' : ''}`}
-    >
-      {deadline.title}
-    </span>
-  );
-}
-
-function DayDetails({ dayKey, minutes, deadlines, courses, actions, onAdded }) {
+function DayDetails({ dayKey, minutes, deadlines, courses, actions }) {
   const isPastOrToday = dayKey <= todayKey();
   return (
     <div>
-      {isPastOrToday ? (
-        <p className="text-pencil">{minutes ? `You studied ${formatMinutes(minutes)} this day.` : 'No study time this day.'}</p>
-      ) : null}
+      {isPastOrToday ? <p className="text-pencil">{minutes ? `You studied ${formatMinutes(minutes)} this day.` : 'No study time this day.'}</p> : null}
       {deadlines.length ? (
         <ul className="mt-2 divide-y divide-rule/60">
           {deadlines.map((d) => (
@@ -387,26 +226,17 @@ function DayDetails({ dayKey, minutes, deadlines, courses, actions, onAdded }) {
       )}
       <div className="mt-5 border-t border-rule pt-5">
         <h3 className="mb-3 font-sans text-base font-bold">Add homework or an exam</h3>
-        <DeadlineForm
-          key={dayKey}
-          idPrefix="calendar-deadline"
-          courses={courses}
-          defaultDate={dayKey}
-          onSubmit={(deadline) => {
-            actions.addAssignment(deadline);
-            onAdded();
-          }}
-        />
+        <DeadlineForm key={dayKey} idPrefix="calendar-deadline" courses={courses} defaultDate={dayKey} onSubmit={actions.addAssignment} />
       </div>
     </div>
   );
 }
 
 /**
- * A month calendar. Each day is shaded by how long you studied and lists the homework
- * and exams due that day. Click a day to see it in full or add a deadline.
+ * A month at a glance. Each day is shaded by how long you studied, with a highlighter
+ * mark for every homework or exam due. Click a day to see it in full or add a deadline.
  */
-export function StudyHeatmap() {
+export function StudyCalendar() {
   const study = useStudy();
   const { sessions, assignments, courses } = study;
   const now = new Date();
@@ -437,56 +267,38 @@ export function StudyHeatmap() {
     setCursor({ year: d.getFullYear(), month: d.getMonth() });
   };
 
-  const navButton = (label, onClick, disabled = false) => (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="rounded-md border border-rule bg-white px-2.5 py-1 text-sm hover:border-ink disabled:cursor-not-allowed disabled:opacity-40"
-    >
+  const navButton = (label, onClick) => (
+    <button type="button" onClick={onClick} className="rounded-md border border-rule bg-white px-2.5 py-1 text-sm hover:border-ink">
       {label}
     </button>
   );
 
   return (
-    <div id="calendar" className="scroll-mt-8">
+    <div id="calendar" className="min-w-0 scroll-mt-8">
       <Section
-        title="Calendar"
+        title={title}
         icon="calendar"
         action={
           <div className="flex items-center gap-2">
             {navButton('Previous', () => shift(-1))}
-            {isCurrentMonth
-              ? null
-              : navButton('This month', () =>
-                  setCursor({
-                    year: now.getFullYear(),
-                    month: now.getMonth(),
-                  })
-                )}
+            {isCurrentMonth ? null : navButton('This month', () => setCursor({ year: now.getFullYear(), month: now.getMonth() }))}
             {navButton('Next', () => shift(1))}
           </div>
         }
       >
-        <p className="text-pencil" aria-live="polite">
-          <span className="font-bold text-ink">{title}</span>
-          {`: studied on ${studiedDays} ${studiedDays === 1 ? 'day' : 'days'}, ${formatMinutes(monthTotal)} in total. `}
-          {monthDeadlines
-            ? `${monthDeadlines} homework and exam ${monthDeadlines === 1 ? 'deadline' : 'deadlines'}.`
-            : 'No deadlines.'}
-          {' Click a day to add homework or an exam.'}
+        <p className="text-sm text-pencil" aria-live="polite">
+          {`Studied on ${studiedDays} ${studiedDays === 1 ? 'day' : 'days'}, `}
+          <span className="font-bold text-ink">{formatMinutes(monthTotal)}</span>
+          {' in total. '}
+          {monthDeadlines ? `${monthDeadlines} ${monthDeadlines === 1 ? 'deadline' : 'deadlines'}. ` : 'No deadlines. '}
+          Click a day to add homework or an exam.
         </p>
-        <table
-          className="mt-4 w-full table-fixed border-separate"
-          style={{
-            borderSpacing: '3px',
-          }}
-        >
+        <table className="mt-3 w-full table-fixed border-separate" style={{ borderSpacing: '3px' }}>
           <caption className="sr-only">{`${title}: study time and deadlines per day`}</caption>
           <thead>
             <tr>
               {WEEKDAYS.map((d) => (
-                <th key={d} scope="col" className="pb-1 text-xs font-normal text-pencil">
+                <th key={d} scope="col" className="pb-1 text-left text-xs font-normal text-pencil">
                   {d}
                 </th>
               ))}
@@ -501,12 +313,7 @@ export function StudyHeatmap() {
                   const dayDeadlines = deadlinesByDate[key] || [];
                   const isToday = key === today;
                   const isFuture = key > today;
-                  const level = isFuture
-                    ? {
-                        min: -1,
-                        className: 'bg-transparent text-ink ring-1 ring-inset ring-rule/50',
-                      }
-                    : levelFor(minutes);
+                  const level = isFuture ? { min: -1, className: 'bg-transparent text-ink ring-1 ring-inset ring-rule/50' } : levelFor(minutes);
                   const label = [
                     formatLongDate(key),
                     isFuture ? null : minutes ? `studied ${formatMinutes(minutes)}` : 'no study',
@@ -521,42 +328,25 @@ export function StudyHeatmap() {
                         onClick={() => setSelected(key)}
                         aria-label={label}
                         title={label}
-                        className={`flex min-h-[3.25rem] w-full flex-col gap-0.5 rounded p-1 text-left hover:ring-2 hover:ring-inset hover:ring-ink sm:min-h-[5.5rem] sm:p-1.5 ${level.className} ${level.min === 0 ? 'ring-1 ring-inset ring-rule' : ''}`}
+                        className={`flex min-h-[3.5rem] w-full flex-col rounded-sm p-1 text-left hover:ring-2 hover:ring-inset hover:ring-ink sm:min-h-[4.25rem] sm:p-1.5 ${level.className} ${level.min === 0 ? 'ring-1 ring-inset ring-rule' : ''} ${isToday ? 'outline outline-2 outline-offset-1 outline-ink' : ''}`}
                       >
-                        <span aria-hidden={true} className="flex items-baseline justify-between gap-1 text-xs tabular">
-                          {isToday ? (
-                            <span className="hl font-bold text-ink">{fromKey(key).getDate()}</span>
-                          ) : (
-                            <span>{fromKey(key).getDate()}</span>
-                          )}
-                          {minutes ? (
-                            <span className="hidden sm:inline">{formatMinutes(minutes).replace(' min', 'm')}</span>
-                          ) : null}
+                        <span aria-hidden={true} className="text-xs tabular">
+                          {isToday ? <span className="hl font-bold text-ink">{fromKey(key).getDate()}</span> : fromKey(key).getDate()}
                         </span>
-                        {/* Phones: a small mark per deadline. Wider screens: the deadline titles. */}
-                        {dayDeadlines.length ? (
-                          <span aria-hidden={true} className="flex flex-wrap gap-0.5 sm:hidden">
-                            {dayDeadlines.slice(0, 3).map((d) => {
-                              const course = courseOf(d);
-                              return (
-                                <span
-                                  key={d.id}
-                                  className={`inline-block h-1.5 w-3 -skew-x-12 rounded-sm ${course ? COURSE_BG[course.color] : 'bg-white ring-1 ring-ink'} ${d.type === 'exam' ? 'ring-1 ring-ink' : ''}`}
-                                />
-                              );
-                            })}
-                          </span>
-                        ) : null}
-                        {dayDeadlines.length ? (
-                          <span aria-hidden={true} className="hidden min-w-0 space-y-0.5 sm:block">
-                            {dayDeadlines.slice(0, MAX_CHIPS).map((d) => (
-                              <Chip key={d.id} deadline={d} course={courseOf(d)} />
-                            ))}
-                            {dayDeadlines.length > MAX_CHIPS ? (
-                              <span className="block text-[0.6875rem]">{`+${dayDeadlines.length - MAX_CHIPS} more`}</span>
-                            ) : null}
-                          </span>
-                        ) : null}
+                        <span aria-hidden={true} className="mt-auto hidden whitespace-nowrap text-[0.6875rem] leading-4 tabular opacity-90 sm:block">
+                          {minutes ? shortMinutes(minutes) : ''}
+                        </span>
+                        <span aria-hidden={true} className="mt-auto flex min-h-[0.5rem] flex-wrap gap-0.5 sm:mt-0.5">
+                          {dayDeadlines.slice(0, MAX_MARKS).map((d) => {
+                            const course = courseOf(d);
+                            return (
+                              <span
+                                key={d.id}
+                                className={`inline-block h-2 w-3.5 -skew-x-12 rounded-sm ring-1 ${course ? COURSE_BG[course.color] : 'bg-white'} ${d.type === 'exam' ? 'ring-ink' : 'ring-white/70'} ${d.done ? 'opacity-50' : ''}`}
+                              />
+                            );
+                          })}
+                        </span>
                       </button>
                     </td>
                   );
@@ -568,39 +358,52 @@ export function StudyHeatmap() {
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-pencil">
           {LEVELS.map((l) => (
             <span key={l.label} className="flex items-center gap-1.5">
-              <span
-                aria-hidden={true}
-                className={`inline-block h-3 w-3 rounded-sm ${l.className.split(' ')[0]} ${l.min === 0 ? 'ring-1 ring-inset ring-rule' : ''}`}
-              />
+              <span aria-hidden={true} className={`inline-block h-3 w-3 rounded-sm ${l.className.split(' ')[0]} ${l.min === 0 ? 'ring-1 ring-inset ring-rule' : ''}`} />
               {l.label}
             </span>
           ))}
           <span className="flex items-center gap-1.5">
-            <span
-              aria-hidden={true}
-              className="inline-block rounded-sm border-l-[3px] border-ink bg-hl-blue px-1 font-bold text-ink"
-            >
-              Exam
-            </span>
-            <span aria-hidden={true} className="inline-block rounded-sm bg-hl-blue px-1 text-ink">
-              Homework
-            </span>
-            <span className="sr-only">Exams are bold with a dark edge; homework is plain.</span>in the course colour
+            <span aria-hidden={true} className="inline-block h-2 w-3.5 -skew-x-12 rounded-sm bg-hl-blue" />
+            Homework
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden={true} className="inline-block h-2 w-3.5 -skew-x-12 rounded-sm bg-hl-blue ring-1 ring-ink" />
+            Exam, in the course colour
           </span>
         </div>
       </Section>
       <Modal open={Boolean(selected)} title={selected ? formatLongDate(selected) : ''} onClose={() => setSelected(null)}>
         {selected ? (
-          <DayDetails
-            dayKey={selected}
-            minutes={byDate[selected] || 0}
-            deadlines={deadlinesByDate[selected] || []}
-            courses={courses}
-            actions={study}
-            onAdded={() => {}}
-          />
+          <DayDetails dayKey={selected} minutes={byDate[selected] || 0} deadlines={deadlinesByDate[selected] || []} courses={courses} actions={study} />
         ) : null}
       </Modal>
     </div>
+  );
+}
+
+// ---------- YourData ----------
+
+/** Fill the app with example data to look around, or wipe everything and start again. */
+export function YourData() {
+  const { courses, tasks, sessions, assignments, loadSampleData, resetData } = useStudy();
+  const hasData = courses.length + tasks.length + sessions.length + assignments.length > 0;
+
+  return (
+    <Section title="Your data" icon="sliders">
+      <p className="max-w-prose text-pencil">
+        Everything is saved in this browser. Loading the sample data replaces your courses, tasks, deadlines and study history with an example term; your
+        friends, groups and rooms stay.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+        {hasData ? (
+          <ConfirmButton label="Load sample data" confirmLabel="Click again to replace your data with the sample" onConfirm={loadSampleData} className="whitespace-normal text-left" />
+        ) : (
+          <Button variant="quiet" onClick={loadSampleData}>
+            Load sample data
+          </Button>
+        )}
+        {hasData ? <ConfirmButton label="Erase everything" confirmLabel="Click again to erase all your data" onConfirm={resetData} className="whitespace-normal text-left" /> : null}
+      </div>
+    </Section>
   );
 }

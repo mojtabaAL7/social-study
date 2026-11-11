@@ -3,15 +3,21 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useStudy } from '../context/StudyContext';
 import { COURSE_COLORS } from '../data';
 import { courseCompletion, formatMinutes, totalMinutes } from '../utils';
-import { CourseCard, CourseDetails, CourseForm } from '../components/courses';
+import { CourseDetails, CourseForm, CourseList } from '../components/courses';
 import { Header } from '../components/layout';
 import { Button, Modal } from '../components/ui';
 
-function CourseList() {
-  const { courses, sessions, assignments, addCourse } = useStudy();
+/**
+ * Courses down the side, the one you picked beside them.
+ * "/courses" opens the first course; "/courses/:courseId" opens that one.
+ */
+export default function Courses() {
+  const { courseId } = useParams();
+  const { courses, sessions, addCourse, loadSampleData } = useStudy();
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
 
+  const course = courseId ? courses.find((c) => c.id === courseId) : courses[0];
   const average = courses.length ? Math.round(courses.reduce((n, c) => n + courseCompletion(c), 0) / courses.length) : 0;
   const tracked = totalMinutes(sessions.filter((s) => courses.some((c) => c.id === s.courseId)));
 
@@ -27,29 +33,38 @@ function CourseList() {
           Add course
         </Button>
       </div>
+
       {courses.length ? (
-        <ul className="divide-y divide-rule/70 border-y-2 border-[color:var(--page-accent,#1B2A4A)]">
-          {courses.map((course) => (
-            <CourseCard key={course.id} course={course} sessions={sessions} assignments={assignments} />
-          ))}
-        </ul>
+        <div className="grid gap-x-12 gap-y-10 lg:grid-cols-[16rem_minmax(0,1fr)] lg:items-start">
+          <CourseList courses={courses} activeId={course ? course.id : null} />
+          {course ? (
+            <CourseDetails key={course.id} course={course} />
+          ) : (
+            <div className="border-t-2 border-[color:var(--page-accent,#1B2A4A)] pt-4">
+              <h2 className="text-lg">Course not found</h2>
+              <p className="mt-1 text-pencil">This course may have been deleted. Pick another one from the list.</p>
+            </div>
+          )}
+        </div>
       ) : (
         <div className="border-t border-rule py-10">
-          <p className="max-w-prose text-pencil">
-            No courses yet. Add one to start tracking chapters, topics, deadlines and study time.
-          </p>
-          <Button onClick={() => setAdding(true)} variant="quiet" className="mt-4">
-            Add your first course
-          </Button>
+          <p className="max-w-prose text-pencil">No courses yet. Add one to start tracking chapters, topics, deadlines and study time.</p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Button onClick={() => setAdding(true)}>Add your first course</Button>
+            <Button onClick={loadSampleData} variant="quiet">
+              Load sample data
+            </Button>
+          </div>
         </div>
       )}
+
       <Modal open={adding} title="Add a course" onClose={() => setAdding(false)}>
         <CourseForm
           submitLabel="Add course"
           suggestedColor={COURSE_COLORS[courses.length % COURSE_COLORS.length]}
           onCancel={() => setAdding(false)}
-          onSubmit={(course) => {
-            const id = addCourse(course);
+          onSubmit={(newCourse) => {
+            const id = addCourse(newCourse);
             setAdding(false);
             navigate(`/courses/${id}`);
           }}
@@ -57,24 +72,4 @@ function CourseList() {
       </Modal>
     </div>
   );
-}
-
-export default function Courses() {
-  const { courseId } = useParams();
-  const { courses } = useStudy();
-
-  if (!courseId) return <CourseList />;
-
-  const course = courses.find((c) => c.id === courseId);
-  if (!course) {
-    return (
-      <div>
-        <Header title="Course not found">This course may have been deleted.</Header>
-        <Button to="/courses" variant="quiet">
-          Back to courses
-        </Button>
-      </div>
-    );
-  }
-  return <CourseDetails course={course} />;
 }
